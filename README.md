@@ -127,6 +127,21 @@ Connectors <-> Auto:   Telegram notifications via Connector
 Event Bus:             Decoupling layer between components
 ```
 
+## See Also: OpenClaw
+
+How does Rinnsal compare to [OpenClaw](https://github.com/openclaw/openclaw), the popular open-source AI assistant (274K+ stars)?
+
+| | **Rinnsal** | **OpenClaw** |
+|---|---|---|
+| **Focus** | Minimal infrastructure layer -- Memory, Connectors, Automation | Full AI assistant -- 20+ messengers, native apps, voice, skill marketplace |
+| **Philosophy** | Provide building blocks, let the LLM handle the rest | All-in-one ecosystem with community-driven extensions |
+| **Memory** | Structured SQLite (facts, lessons, working memory, sessions) | Session-based with `/compact`, workspace files |
+| **Connectors** | Telegram, Discord, Home Assistant (same abstraction pattern, growing) | 20+ platforms (WhatsApp, Slack, Signal, Teams, Matrix...) |
+| **Dependencies** | Zero -- pure Python stdlib | Node.js 22+, numerous npm packages |
+| **License** | MIT | MIT |
+
+**In short:** Rinnsal and OpenClaw share the same connector gateway pattern, but take opposite approaches to complexity. Rinnsal stays minimal with zero dependencies and structured memory. OpenClaw goes all-in with native apps, voice, and a massive community. Different starting points, potentially converging on connectors.
+
 ## License
 
 MIT -- Lukas Geiger

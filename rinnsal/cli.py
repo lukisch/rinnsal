@@ -40,6 +40,15 @@ def cmd_status(args) -> int:
     except Exception as e:
         print(f"  Memory:  nicht verfuegbar ({e})")
 
+    # Tasks
+    try:
+        from rinnsal.tasks.client import TaskClient
+        tc = TaskClient(db_path=args.db or "rinnsal.db")
+        c = tc.count()
+        print(f"  Tasks:   {c.get('open', 0)} offen, {c.get('active', 0)} aktiv, {c.get('done', 0)} erledigt")
+    except Exception as e:
+        print(f"  Tasks:   nicht verfuegbar ({e})")
+
     # Chains
     try:
         from rinnsal.auto.config import list_chains
@@ -211,6 +220,119 @@ def cmd_connect(args) -> int:
         return 1
 
 
+# === Task Commands ===
+
+def cmd_task(args) -> int:
+    """Delegiert an Task-Subcommands."""
+    from rinnsal.tasks.client import TaskClient
+
+    client = TaskClient(
+        db_path=args.db or "rinnsal.db",
+        agent_id=args.agent or "cli"
+    )
+
+    subcmd = args.task_cmd
+
+    if subcmd == "add":
+        result = client.add(
+            title=args.title,
+            description=getattr(args, 'description', '') or '',
+            priority=getattr(args, 'priority', 'medium') or 'medium',
+            tags=getattr(args, 'tags', '') or ''
+        )
+        print(f"[OK] Task #{result['id']} erstellt: {result['title']}")
+
+    elif subcmd == "list":
+        status_filter = getattr(args, 'status', None)
+        include_done = getattr(args, 'all', False)
+        tasks = client.list(status=status_filter, include_done=include_done)
+        if not tasks:
+            print("Keine Tasks gefunden.")
+        elif getattr(args, 'json', False):
+            print(json.dumps(tasks, indent=2, ensure_ascii=False))
+        else:
+            _print_task_table(tasks)
+
+    elif subcmd == "done":
+        if client.done(args.id):
+            print(f"[OK] Task #{args.id} erledigt.")
+        else:
+            print(f"[FEHLER] Task #{args.id} nicht gefunden.")
+            return 1
+
+    elif subcmd == "activate":
+        if client.activate(args.id):
+            print(f"[OK] Task #{args.id} aktiviert.")
+        else:
+            print(f"[FEHLER] Task #{args.id} nicht gefunden.")
+            return 1
+
+    elif subcmd == "cancel":
+        if client.cancel(args.id):
+            print(f"[OK] Task #{args.id} storniert.")
+        else:
+            print(f"[FEHLER] Task #{args.id} nicht gefunden.")
+            return 1
+
+    elif subcmd == "reopen":
+        if client.reopen(args.id):
+            print(f"[OK] Task #{args.id} wieder geoeffnet.")
+        else:
+            print(f"[FEHLER] Task #{args.id} nicht gefunden.")
+            return 1
+
+    elif subcmd == "delete":
+        if client.delete(args.id):
+            print(f"[OK] Task #{args.id} geloescht.")
+        else:
+            print(f"[FEHLER] Task #{args.id} nicht gefunden.")
+            return 1
+
+    elif subcmd == "show":
+        task = client.get(args.id)
+        if not task:
+            print(f"[FEHLER] Task #{args.id} nicht gefunden.")
+            return 1
+        print(f"Task #{task['id']}")
+        print(f"  Titel:       {task['title']}")
+        print(f"  Status:      {task['status']}")
+        print(f"  Prioritaet:  {task['priority']}")
+        print(f"  Agent:       {task['agent_id']}")
+        if task['description']:
+            print(f"  Beschreibung: {task['description']}")
+        if task['tags']:
+            print(f"  Tags:        {task['tags']}")
+        print(f"  Erstellt:    {task['created_at'][:19]}")
+        if task['done_at']:
+            print(f"  Erledigt:    {task['done_at'][:19]}")
+
+    elif subcmd == "count":
+        c = client.count()
+        print(f"Tasks: {c['total']} total")
+        for s in ('open', 'active', 'done', 'cancelled'):
+            if c[s] > 0:
+                print(f"  {s:<12} {c[s]}")
+
+    else:
+        print(f"Unbekannter Task-Befehl: {subcmd}")
+        return 1
+
+    return 0
+
+
+def _print_task_table(tasks):
+    """Gibt eine formatierte Task-Tabelle aus."""
+    pri_sym = {'critical': '!!!', 'high': '!!', 'medium': '!', 'low': '.'}
+    stat_sym = {'open': ' ', 'active': '>', 'done': 'x', 'cancelled': '-'}
+    print(f"{'ID':>4}  {'S':1}  {'Pri':3}  {'Titel':<50}  {'Agent':<10}")
+    print("-" * 75)
+    for t in tasks:
+        s = stat_sym.get(t['status'], '?')
+        p = pri_sym.get(t['priority'], '?')
+        title = t['title'][:48] + ".." if len(t['title']) > 50 else t['title']
+        print(f"{t['id']:>4}  {s:1}  {p:<3}  {title:<50}  {t['agent_id']:<10}")
+
+
 # === Pipe Command ===
 
 def cmd_pipe(args) -> int:
@@ -297,6 +419,43 @@ def main(argv: Optional[list] = None) -> int:
     chain_sub.add_parser('create', help='Neue Kette erstellen')
 
     p_chain.set_defaults(func=cmd_chain)
+
+    # task
+    p_task = subparsers.add_parser('task', help='Task-Befehle')
+    task_sub = p_task.add_subparsers(dest='task_cmd')
+
+    p_ta = task_sub.add_parser('add', help='Task erstellen')
+    p_ta.add_argument('title')
+    p_ta.add_argument('--description', '-d', default='')
+    p_ta.add_argument('--priority', '-p', choices=['critical', 'high', 'medium', 'low'], default='medium')
+    p_ta.add_argument('--tags', '-t', default='')
+
+    p_tl = task_sub.add_parser('list', help='Tasks auflisten')
+    p_tl.add_argument('--status', '-s', choices=['open', 'active', 'done', 'cancelled'])
+    p_tl.add_argument('--all', '-a', action='store_true', help='Auch erledigte/stornierte')
+    p_tl.add_argument('--json', '-j', action='store_true')
+
+    p_ts = task_sub.add_parser('show', help='Task-Details')
+    p_ts.add_argument('id', type=int)
+
+    p_td = task_sub.add_parser('done', help='Task erledigen')
+    p_td.add_argument('id', type=int)
+
+    p_tact = task_sub.add_parser('activate', help='Task aktivieren')
+    p_tact.add_argument('id', type=int)
+
+    p_tc = task_sub.add_parser('cancel', help='Task stornieren')
+    p_tc.add_argument('id', type=int)
+
+    p_tr = task_sub.add_parser('reopen', help='Task wieder oeffnen')
+    p_tr.add_argument('id', type=int)
+
+    p_tdel = task_sub.add_parser('delete', help='Task loeschen')
+    p_tdel.add_argument('id', type=int)
+
+    task_sub.add_parser('count', help='Task-Zaehler')
+
+    p_task.set_defaults(func=cmd_task)
 
     # connect
     p_conn = subparsers.add_parser('connect', help='Connector-Befehle')

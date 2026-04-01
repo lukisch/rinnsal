@@ -32,3 +32,7 @@ state/
 *~
 .DS_Store
 Thumbs.db
+
+# Server-spezifische Configs (Pfade, Credentials)
+rinnsal.json
+system_prompt.txt
